@@ -16,6 +16,13 @@ type Sinks struct {
 	ctx   context.Context
 }
 
+func CreateSinks(ctx context.Context) (*Sinks, error) {
+	return &Sinks{
+		sinks: make(map[string]*Sink),
+		ctx:   ctx,
+	}, nil
+}
+
 func (sinks *Sinks) CreateSink(id string, options ...StreamOption) error {
 	var (
 		stream *Stream

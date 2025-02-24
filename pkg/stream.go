@@ -3,10 +3,12 @@ package mediasink
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/harshabose/tools/buffer/pkg"
 	"github.com/pion/rtp"
+
 	"mediasink/internal"
-	"time"
 )
 
 type Stream struct {
