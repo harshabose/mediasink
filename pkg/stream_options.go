@@ -1,11 +1,24 @@
 package mediasink
 
-type StreamOption = func(*Stream) error
-type HostOption = func(Host) error
+import (
+	"mediasink/pkg/rtsp"
+	"mediasink/pkg/udp"
+)
 
-func WithHost(host Host) StreamOption {
+type StreamOption = func(*Stream) error
+
+func WithRTSPHost(port int, path string, options ...rtsp.Option) StreamOption {
 	return func(stream *Stream) error {
-		stream.host = host
-		return nil
+		var err error
+		stream.host, err = rtsp.CreateHost(port, path, options...)
+		return err
+	}
+}
+
+func WithUDPHost(port int) StreamOption {
+	return func(stream *Stream) error {
+		var err error
+		stream.host, err = udp.CreateHost(port)
+		return err
 	}
 }
