@@ -1,4 +1,4 @@
-module mediasink
+module github.com/harshabose/simple_webrtc_comm/mediasink
 
 go 1.23.3
 

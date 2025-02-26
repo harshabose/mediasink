@@ -8,7 +8,7 @@ import (
 	"github.com/harshabose/tools/buffer/pkg"
 	"github.com/pion/rtp"
 
-	"mediasink/internal"
+	"github.com/harshabose/simple_webrtc_comm/mediasink/internal"
 )
 
 type Stream struct {
@@ -38,6 +38,7 @@ func (stream *Stream) WriteRTPPacket(packet *rtp.Packet) error {
 
 func (stream *Stream) Start() {
 	go stream.loop()
+	fmt.Println("media sink stream started")
 }
 
 func (stream *Stream) loop() {

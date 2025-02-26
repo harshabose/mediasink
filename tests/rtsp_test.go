@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"mediasink/pkg"
-	"mediasink/pkg/rtsp"
+	"github.com/harshabose/simple_webrtc_comm/mediasink/pkg"
+	"github.com/harshabose/simple_webrtc_comm/mediasink/pkg/rtsp"
 )
 
 func TestRTSP(t *testing.T) {

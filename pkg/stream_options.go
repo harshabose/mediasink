@@ -1,8 +1,8 @@
 package mediasink
 
 import (
-	"mediasink/pkg/rtsp"
-	"mediasink/pkg/udp"
+	"github.com/harshabose/simple_webrtc_comm/mediasink/pkg/rtsp"
+	"github.com/harshabose/simple_webrtc_comm/mediasink/pkg/udp"
 )
 
 type StreamOption = func(*Stream) error

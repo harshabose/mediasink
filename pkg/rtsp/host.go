@@ -36,9 +36,13 @@ func CreateHost(port int, name string, options ...Option) (*Host, error) {
 
 	fmt.Printf("started video rtsp on: %s\n", host.rtspAddress)
 
-	go func() {
-		panic(host.server.server.StartAndWait())
-	}()
+	if err := host.server.Start(); err != nil {
+		return nil, err
+	}
+
+	if err := host.client.StartRecording(host.rtspAddress, host.description); err != nil {
+		return nil, err
+	}
 
 	return host, nil
 }

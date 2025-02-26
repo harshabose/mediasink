@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"mediasink/pkg"
-	"mediasink/pkg/udp"
+	"github.com/harshabose/simple_webrtc_comm/mediasink/pkg"
+	"github.com/harshabose/simple_webrtc_comm/mediasink/pkg/udp"
 )
 
 func TestUDP(t *testing.T) {
