@@ -38,21 +38,22 @@ func CreateSinks(ctx context.Context, mediaEngine *webrtc.MediaEngine, intercept
 	return sinks, nil
 }
 
-func (sinks *Sinks) CreateSink(id string, options ...StreamOption) error {
+func (sinks *Sinks) CreateSink(id string, options ...StreamOption) (*Sink, error) {
 	var (
 		stream *Stream
 		err    error
 	)
 
 	if _, exists := sinks.sinks[id]; exists {
-		return errors.New("track already exists")
+		return nil, errors.New("track already exists")
 	}
 	if stream, err = CreateStream(sinks.ctx, 60, options...); err != nil {
-		return err
+		return nil, err
 	}
-	sinks.sinks[id] = CreateSink(sinks.ctx, stream)
+	sink := CreateSink(sinks.ctx, stream)
+	sinks.sinks[id] = sink
 
-	return nil
+	return sink, nil
 }
 
 func (sinks *Sinks) GetSink(id string) (*Sink, error) {
