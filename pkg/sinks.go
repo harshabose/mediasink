@@ -3,30 +3,17 @@ package mediasink
 import (
 	"context"
 	"errors"
-
-	"github.com/pion/interceptor"
-	"github.com/pion/webrtc/v4"
 )
 
-import "github.com/pion/rtp"
-
-type Host interface {
-	Write(*rtp.Packet) error
-}
-
 type Sinks struct {
-	mediaEngine         *webrtc.MediaEngine
-	interceptorRegistry *interceptor.Registry
-	sinks               map[string]*Sink
-	ctx                 context.Context
+	sinks map[string]*Sink
+	ctx   context.Context
 }
 
-func CreateSinks(ctx context.Context, mediaEngine *webrtc.MediaEngine, interceptorRegistry *interceptor.Registry, options ...SinksOptions) (*Sinks, error) {
+func CreateSinks(ctx context.Context, options ...SinksOptions) (*Sinks, error) {
 	sinks := &Sinks{
-		mediaEngine:         mediaEngine,
-		interceptorRegistry: interceptorRegistry,
-		sinks:               make(map[string]*Sink),
-		ctx:                 ctx,
+		sinks: make(map[string]*Sink),
+		ctx:   ctx,
 	}
 
 	for _, option := range options {

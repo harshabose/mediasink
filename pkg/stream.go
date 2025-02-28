@@ -9,10 +9,11 @@ import (
 	"github.com/pion/rtp"
 
 	"github.com/harshabose/simple_webrtc_comm/mediasink/internal"
+	"github.com/harshabose/simple_webrtc_comm/mediasink/pkg/rtsp"
 )
 
 type Stream struct {
-	host   Host
+	host   *rtsp.Host
 	buffer buffer.BufferWithGenerator[rtp.Packet]
 	ctx    context.Context
 }
