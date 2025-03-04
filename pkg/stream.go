@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/harshabose/tools/buffer/pkg"
 	"github.com/pion/rtp"
+
+	"github.com/harshabose/tools/buffer/pkg"
 
 	"github.com/harshabose/simple_webrtc_comm/mediasink/internal"
 	"github.com/harshabose/simple_webrtc_comm/mediasink/pkg/rtsp"
@@ -50,7 +51,9 @@ func (stream *Stream) loop() {
 		case packet := <-stream.buffer.GetChannel():
 			if err := stream.host.Write(packet); err != nil {
 				fmt.Println(err)
+				continue
 			}
+			stream.buffer.PutBack(packet)
 		}
 	}
 }

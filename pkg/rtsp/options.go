@@ -54,6 +54,8 @@ func WithOpusOptions(channelCount int) Option {
 func WithH264OptionsFromRemote(remote *webrtc.TrackRemote) Option {
 	return func(host *Host) error {
 		sps, pps, err := parseSPSPPS(remote.Codec().SDPFmtpLine)
+
+		fmt.Printf("got a remote track with SDP line: %s\n", remote.Codec().SDPFmtpLine)
 		if err != nil {
 			return err
 		}
@@ -61,14 +63,15 @@ func WithH264OptionsFromRemote(remote *webrtc.TrackRemote) Option {
 		if err != nil {
 			return err
 		}
+		_ = packetisationMode
 
 		host.description.Medias = append(host.description.Medias, &description.Media{
 			Type: description.MediaTypeVideo,
 			Formats: []format.Format{&format.H264{
-				PayloadTyp:        uint8(remote.Codec().PayloadType),
-				PacketizationMode: packetisationMode,
-				SPS:               sps,
-				PPS:               pps,
+				PayloadTyp:        96,
+				PacketizationMode: 1,
+				SPS:               sps[4:],
+				PPS:               pps[4:],
 			}},
 		})
 		return nil
@@ -85,6 +88,8 @@ func parseSPSPPS(sdpFmtpLine string) (sps, pps []byte, err error) {
 			break
 		}
 	}
+
+	spropParameterSets = "AAAAAWdCwCmRoB4AiflhAAADAAEAAAMAMo8YMqA=,AAAAAWjOD8g="
 
 	if spropParameterSets == "" {
 		return nil, nil, errors.New("sprop-parameter-sets not found in SDP fmtp line")
@@ -107,6 +112,9 @@ func parseSPSPPS(sdpFmtpLine string) (sps, pps []byte, err error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to decode PPS base64: %w", err)
 	}
+
+	fmt.Println("SPS for remote: ", sps)
+	fmt.Println("PPS for remote: ", pps)
 
 	return sps, pps, nil
 }
