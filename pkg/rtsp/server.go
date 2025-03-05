@@ -2,12 +2,13 @@ package rtsp
 
 import (
 	"fmt"
+	"sync"
+
 	"github.com/bluenviron/gortsplib/v4"
 	"github.com/bluenviron/gortsplib/v4/pkg/base"
 	"github.com/bluenviron/gortsplib/v4/pkg/description"
 	"github.com/bluenviron/gortsplib/v4/pkg/format"
 	"github.com/pion/rtp"
-	"sync"
 )
 
 type Server struct {
@@ -20,9 +21,14 @@ type Server struct {
 func CreateServer(port int) *Server {
 	handler := &Server{}
 	handler.server = &gortsplib.Server{
-		Handler:        handler,
-		RTSPAddress:    fmt.Sprintf(":%d", port),
-		WriteQueueSize: 4096,
+		Handler:           handler,
+		RTSPAddress:       fmt.Sprintf(":%d", port),
+		WriteQueueSize:    4096,
+		UDPRTPAddress:     ":8000",
+		UDPRTCPAddress:    ":8001",
+		MulticastIPRange:  "224.1.0.0/16",
+		MulticastRTPPort:  8002,
+		MulticastRTCPPort: 8003,
 	}
 
 	return handler

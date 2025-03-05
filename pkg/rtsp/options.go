@@ -89,7 +89,7 @@ func parseSPSPPS(sdpFmtpLine string) (sps, pps []byte, err error) {
 		}
 	}
 
-	spropParameterSets = "AAAAAWdCwCmRoB4AiflhAAADAAEAAAMAMo8YMqA=,AAAAAWjOD8g="
+	spropParameterSets = "AAAAAWdCwCmmgHgCJ+WEAAADAAQAAAMAyjxgyoA=,AAAAAWjOPIA="
 
 	if spropParameterSets == "" {
 		return nil, nil, errors.New("sprop-parameter-sets not found in SDP fmtp line")
