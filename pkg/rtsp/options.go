@@ -63,13 +63,12 @@ func WithH264OptionsFromRemote(remote *webrtc.TrackRemote) Option {
 		if err != nil {
 			return err
 		}
-		_ = packetisationMode
 
 		host.description.Medias = append(host.description.Medias, &description.Media{
 			Type: description.MediaTypeVideo,
 			Formats: []format.Format{&format.H264{
-				PayloadTyp:        96,
-				PacketizationMode: 1,
+				PayloadTyp:        uint8(remote.Codec().PayloadType),
+				PacketizationMode: packetisationMode,
 				SPS:               sps[4:],
 				PPS:               pps[4:],
 			}},
@@ -88,8 +87,6 @@ func parseSPSPPS(sdpFmtpLine string) (sps, pps []byte, err error) {
 			break
 		}
 	}
-
-	spropParameterSets = "AAAAAWdCwCmmgHgCJ+WEAAADAAQAAAMAyjxgyoA=,AAAAAWjOPIA="
 
 	if spropParameterSets == "" {
 		return nil, nil, errors.New("sprop-parameter-sets not found in SDP fmtp line")
