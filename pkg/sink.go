@@ -31,6 +31,7 @@ func (sink *Sink) Start() {
 }
 
 func (sink *Sink) loop() {
+	defer sink.close()
 loop:
 	for {
 		select {
@@ -48,3 +49,5 @@ loop:
 		}
 	}
 }
+
+func (sink *Sink) close() {}

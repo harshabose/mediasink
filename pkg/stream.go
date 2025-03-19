@@ -44,6 +44,8 @@ func (stream *Stream) Start() {
 }
 
 func (stream *Stream) loop() {
+	defer stream.close()
+
 	for {
 		select {
 		case <-stream.ctx.Done():
@@ -56,4 +58,8 @@ func (stream *Stream) loop() {
 			stream.buffer.PutBack(packet)
 		}
 	}
+}
+
+func (stream *Stream) close() {
+	_ = stream.host.Close()
 }

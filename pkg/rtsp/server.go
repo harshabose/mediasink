@@ -141,6 +141,6 @@ func (server *Server) OnRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	}, nil
 }
 
-func (server *Server) Stop() {
+func (server *Server) Close() {
 	server.server.Close()
 }

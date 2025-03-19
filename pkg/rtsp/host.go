@@ -55,3 +55,10 @@ func (host *Host) Write(packet *rtp.Packet) error {
 	}
 	return host.client.WritePacketRTP(host.description.Medias[0], packet)
 }
+
+func (host *Host) Close() error {
+	host.client.Close()
+	host.server.Close()
+
+	return nil
+}
