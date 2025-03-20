@@ -51,11 +51,22 @@ func WithOpusOptions(channelCount int) Option {
 	}
 }
 
-func WithH264OptionsFromRemote(remote *webrtc.TrackRemote) Option {
+func WithOptionsFromRemote(remote *webrtc.TrackRemote) Option {
+	if remote.Codec().MimeType == webrtc.MimeTypeH264 {
+		return withH264OptionsFromRemote(remote)
+	}
+	if remote.Codec().MimeType == webrtc.MimeTypeOpus {
+		return withOpusOptionsFromRemote(remote)
+	}
+	return func(host *Host) error {
+		return errors.New("unknown media codec")
+	}
+}
+
+func withH264OptionsFromRemote(remote *webrtc.TrackRemote) Option {
 	return func(host *Host) error {
 		sps, pps, err := parseSPSPPS(remote.Codec().SDPFmtpLine)
 
-		fmt.Printf("got a remote track with SDP line: %s\n", remote.Codec().SDPFmtpLine)
 		if err != nil {
 			return err
 		}
@@ -73,6 +84,20 @@ func WithH264OptionsFromRemote(remote *webrtc.TrackRemote) Option {
 				PPS:               pps[4:],
 			}},
 		})
+		return nil
+	}
+}
+
+func withOpusOptionsFromRemote(remote *webrtc.TrackRemote) Option {
+	return func(host *Host) error {
+		host.description.Medias = append(host.description.Medias, &description.Media{
+			Type: description.MediaTypeAudio,
+			Formats: []format.Format{&format.Opus{
+				PayloadTyp:   uint8(remote.Codec().PayloadType),
+				ChannelCount: int(remote.Codec().RTPCodecCapability.Channels),
+			}},
+		})
+
 		return nil
 	}
 }

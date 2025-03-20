@@ -48,6 +48,10 @@ func CreateHost(port int, name string, options ...Option) (*Host, error) {
 }
 
 func (host *Host) Write(packet *rtp.Packet) error {
+	if packet == nil {
+		fmt.Println("nil packet, not sending to sink host")
+		return nil
+	}
 	expPayloadType := host.description.Medias[0].Formats[0].PayloadType()
 	if packet.PayloadType != expPayloadType {
 		fmt.Printf("expected payload type '%d' but got '%d'\n", expPayloadType, packet.PayloadType)
