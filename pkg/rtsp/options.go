@@ -55,6 +55,9 @@ func WithOptionsFromRemote(remote *webrtc.TrackRemote) Option {
 	if remote.Codec().MimeType == webrtc.MimeTypeH264 {
 		return withH264OptionsFromRemote(remote)
 	}
+	if remote.Codec().MimeType == webrtc.MimeTypeVP8 {
+		return withVP8OptionsFromRemote(remote)
+	}
 	if remote.Codec().MimeType == webrtc.MimeTypeOpus {
 		return withOpusOptionsFromRemote(remote)
 	}
@@ -82,6 +85,20 @@ func withH264OptionsFromRemote(remote *webrtc.TrackRemote) Option {
 				PacketizationMode: packetisationMode,
 				SPS:               sps[4:],
 				PPS:               pps[4:],
+			}},
+		})
+		return nil
+	}
+}
+
+func withVP8OptionsFromRemote(remote *webrtc.TrackRemote) Option {
+	return func(host *Host) error {
+		host.description.Medias = append(host.description.Medias, &description.Media{
+			Type: description.MediaTypeVideo,
+			Formats: []format.Format{&format.VP8{
+				PayloadTyp: uint8(remote.Codec().PayloadType),
+				MaxFR:      nil,
+				MaxFS:      nil,
 			}},
 		})
 		return nil
