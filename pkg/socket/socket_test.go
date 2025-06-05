@@ -17,33 +17,33 @@ import (
 )
 
 // Test helper functions
-func createTestServer(port uint16) *Server {
-	config := config{
-		addr:             "localhost",
-		port:             port, // Let OS choose port
-		readTimout:       5 * time.Second,
-		writeTimout:      5 * time.Second,
-		totalConnections: 5,
-		keepHosting:      false,
+func createTestServer(Port uint16) *Server {
+	config := Config{
+		Addr:             "localhost",
+		Port:             Port, // Let OS choose Port
+		ReadTimout:       5 * time.Second,
+		WriteTimout:      5 * time.Second,
+		TotalConnections: 5,
+		KeepHosting:      false,
 	}
 	return NewServer(config)
 }
 
-func createTestHost(addr string, port uint16, onMessage OnServerMessage) *Host {
+func createTestHost(Addr string, Port uint16, onMessage OnServerMessage) *Host {
 	config := HostConfig{
-		writeTimeout: 5 * time.Second,
-		readTimout:   5 * time.Second,
-		connectRetry: false,
+		WriteTimeout: 5 * time.Second,
+		ReadTimout:   5 * time.Second,
+		ConnectRetry: false,
 	}
 	return &Host{
-		addr:   addr,
-		port:   port,
+		addr:   Addr,
+		port:   Port,
 		config: config,
 		f:      onMessage,
 	}
 }
 
-// Test port allocation - each test gets a dedicated port
+// Test Port allocation - each test gets a dedicated Port
 const (
 	testPortBase        = 9000
 	testPortStatus      = testPortBase + 1 // 9001
@@ -164,7 +164,7 @@ func TestHost_Connect_NoServer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// Should fail to connect and return quickly since connectRetry is false
+	// Should fail to connect and return quickly since ConnectRetry is false
 	host.Connect(ctx)
 
 	// Verify no messages received
@@ -185,7 +185,7 @@ func TestHost_WriteWithoutConnection(t *testing.T) {
 		Payload: []byte("test payload"),
 	}
 
-	err := host.Write(packet)
+	err := host.WriteRTP(packet)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "yet to connect to server")
 }
@@ -232,7 +232,7 @@ func TestServerHost_Integration(t *testing.T) {
 	}
 
 	host := createTestHost("localhost", testPortIntegration, onMessage)
-	host.config.connectRetry = false
+	host.config.ConnectRetry = false
 
 	// Connect host
 	hostCtx, hostCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -260,8 +260,8 @@ func TestServerHost_MultipleClients(t *testing.T) {
 
 	// Create and start server
 	server := createTestServer(testPortMultiClient)
-	server.config.port = testPortMultiClient
-	server.config.totalConnections = 3
+	server.config.Port = testPortMultiClient
+	server.config.TotalConnections = 3
 	server.httpServer.Addr = fmt.Sprintf("localhost:%d", testPortMultiClient)
 
 	serverCtx, serverCancel := context.WithCancel(context.Background())
@@ -272,7 +272,7 @@ func TestServerHost_MultipleClients(t *testing.T) {
 
 	// Connect host first
 	host := createTestHost("localhost", testPortMultiClient, func(msg []byte) error { return nil })
-	host.config.connectRetry = false
+	host.config.ConnectRetry = false
 
 	hostCtx, hostCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer hostCancel()
@@ -319,7 +319,7 @@ func TestServer_ConnectionLimit(t *testing.T) {
 
 	// Connect host first
 	host := createTestHost("localhost", testPortConnLimit, func(msg []byte) error { return nil })
-	host.config.connectRetry = false
+	host.config.ConnectRetry = false
 
 	go host.Connect(context.Background())
 	time.Sleep(300 * time.Millisecond)
@@ -342,7 +342,7 @@ func TestServer_ConnectionLimit(t *testing.T) {
 	}
 
 	// Should respect connection limit
-	assert.LessOrEqual(t, successfulConnections, int(server.config.totalConnections))
+	assert.LessOrEqual(t, successfulConnections, int(server.config.TotalConnections))
 
 	// Check that failed connections were recorded
 	failed := server.metrics.failed()
@@ -352,13 +352,13 @@ func TestServer_ConnectionLimit(t *testing.T) {
 }
 
 func BenchmarkServer_WebSocketUpgrade(b *testing.B) {
-	config := config{
-		addr:             "localhost",
-		port:             testPortBenchmark, // Let OS choose port
-		readTimout:       100 * time.Millisecond,
-		writeTimout:      100 * time.Millisecond,
-		totalConnections: 255,
-		keepHosting:      false,
+	config := Config{
+		Addr:             "localhost",
+		Port:             testPortBenchmark, // Let OS choose Port
+		ReadTimout:       100 * time.Millisecond,
+		WriteTimout:      100 * time.Millisecond,
+		TotalConnections: 255,
+		KeepHosting:      false,
 	}
 	server := NewServer(config)
 

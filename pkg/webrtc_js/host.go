@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,12 @@ import (
 type (
 	SDPStatus    string
 	ServerStatus string
+)
+
+var (
+	// Remove the start codes (0 0 0 1) for RTP - only keep the NAL unit
+	spsData = []byte{103, 66, 192, 31, 166, 128, 216, 61, 230, 225, 0, 0, 3, 0, 1, 0, 0, 3, 0, 50, 224, 32, 0, 19, 18, 208, 0, 9, 137, 110, 41, 32, 7, 140, 25, 80}
+	ppsData = []byte{104, 206, 62, 128}
 )
 
 const (
@@ -51,6 +58,9 @@ func isLoopBack(remoteAddr string) bool {
 type ClientSession struct {
 	peerConnection  *webrtc.PeerConnection
 	videoTrack      *webrtc.TrackLocalStaticRTP
+	primarySSRC     webrtc.SSRC
+	rtxSSRC         webrtc.SSRC
+	RTPPayloadType  webrtc.PayloadType
 	sdpStatus       SDPStatus
 	ttl             time.Duration
 	connectionState webrtc.PeerConnectionState
@@ -230,7 +240,6 @@ func NewHost(config Config) *Host {
 			Addr:              fmt.Sprintf("%s:%d", config.Addr, config.Port),
 			ReadHeaderTimeout: config.ReadTimout,
 			WriteTimeout:      config.WriteTimout,
-			Handler:           router,
 		},
 		config:    config,
 		clients:   make(map[string]*ClientSession),
@@ -244,6 +253,8 @@ func NewHost(config Config) *Host {
 	router.HandleFunc("/api/webrtc-sink/answer/{ID}", server.answerHandler)
 	router.HandleFunc("/api/webrtc-sink/metrics", server.metricsHandler)
 	router.HandleFunc("/api/webrtc-sink/health", server.healthHandler)
+
+	server.httpServer.Handler = server.enableCORS(router)
 
 	return server
 }
@@ -265,7 +276,7 @@ func (h *Host) setSession(ctx context.Context) {
 	h.ctx, h.cancel = context.WithCancel(ctx)
 }
 
-func (h *Host) Start(ctx context.Context) {
+func (h *Host) Connect(ctx context.Context) {
 	h.setSession(ctx)
 	defer h.close()
 
@@ -302,8 +313,25 @@ loop:
 	}
 }
 
+func (h *Host) enableCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (h *Host) requestHandler(w http.ResponseWriter, req *http.Request) {
-	// Extract ID from path
+	fmt.Printf("got request")
 	id := req.PathValue("ID")
 	if id == "" {
 		http.Error(w, "Missing ID parameter", http.StatusBadRequest)
@@ -362,7 +390,7 @@ func (h *Host) handleOfferRequest(w http.ResponseWriter, req *http.Request, id s
 		return
 	}
 
-	// Set local description
+	// Set local description FIRST
 	if err := session.peerConnection.SetLocalDescription(offer); err != nil {
 		errMsg := fmt.Sprintf("Failed to set local description: %v", err)
 		h.health.addError(errMsg)
@@ -370,17 +398,33 @@ func (h *Host) handleOfferRequest(w http.ResponseWriter, req *http.Request, id s
 		return
 	}
 
+	// THEN wait for ICE gathering
+	fmt.Printf("Waiting for ICE gathering to complete for session: %s\n", id)
+	<-webrtc.GatheringCompletePromise(session.peerConnection)
+	fmt.Printf("ICE gathering complete for session: %s\n", id)
+
+	// Get the complete local description with ICE candidates
+	finalOffer := session.peerConnection.LocalDescription()
+
+	localSDP := session.peerConnection.LocalDescription()
+	primarySSRC, rtxSSRC := extractSSRCFromSDP(localSDP.SDP)
+
+	session.primarySSRC = webrtc.SSRC(primarySSRC)
+	session.rtxSSRC = webrtc.SSRC(rtxSSRC)
+
 	// Update session status
 	session.mu.Lock()
 	session.sdpStatus = SDPOfferSent
 	session.mu.Unlock()
 
-	// Send offer response
+	// Send offer response with complete ICE candidates
 	offerResponse := Offer{
 		ID:        id,
-		Offer:     offer,
+		Offer:     *finalOffer, // Use the final description with ICE candidates
 		Timestamp: time.Now(),
 	}
+
+	fmt.Printf("offer: %s\n", finalOffer.SDP)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(offerResponse); err != nil {
@@ -390,7 +434,7 @@ func (h *Host) handleOfferRequest(w http.ResponseWriter, req *http.Request, id s
 		return
 	}
 
-	fmt.Printf("Sent offer for session: %h\n", id)
+	fmt.Printf("Sent offer for session: %s\n", id)
 }
 
 func (h *Host) answerHandler(w http.ResponseWriter, req *http.Request) {
@@ -432,6 +476,8 @@ func (h *Host) handleAnswerResponse(w http.ResponseWriter, req *http.Request, id
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
 	}
+
+	fmt.Printf("answer: %s\n", answer.Answer.SDP)
 
 	// Set remote description (answer)
 	if err := session.peerConnection.SetRemoteDescription(answer.Answer); err != nil {
@@ -509,9 +555,13 @@ func (h *Host) getOrCreateSession(id string, ttl time.Duration) (*ClientSession,
 
 	// Create video track
 	videoTrack, err := webrtc.NewTrackLocalStaticRTP(
-		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264},
+		webrtc.RTPCodecCapability{
+			MimeType:    webrtc.MimeTypeH264,
+			ClockRate:   90000,
+			SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f", // Match PT 102
+		},
 		"video",
-		fmt.Sprintf("%h-video", id),
+		fmt.Sprintf("%s-video", id),
 	)
 	if err != nil {
 		pc.Close()
@@ -557,7 +607,7 @@ func (h *Host) getOrCreateSession(id string, ttl time.Duration) (*ClientSession,
 		session.connectionState = state
 		session.mu.Unlock()
 
-		fmt.Printf("Session %h connection state: %h\n", id, state.String())
+		fmt.Printf("Session %s connection state: %s\n", id, state.String())
 
 		switch state {
 		case webrtc.PeerConnectionStateConnected:
@@ -565,6 +615,13 @@ func (h *Host) getOrCreateSession(id string, ttl time.Duration) (*ClientSession,
 			session.sdpStatus = SDPConnected
 			session.mu.Unlock()
 			h.metrics.increaseActiveConnections()
+			fmt.Printf("🚀 Connection established! Sending SPS/PPS for session %s\n", id)
+			if err := h.sendParameterSets(id); err != nil {
+				fmt.Printf("❌ Failed to send parameter sets: %v\n", err)
+			}
+
+			// Start periodic SPS/PPS sending
+			h.startParameterSetTimer(id)
 		case webrtc.PeerConnectionStateDisconnected, webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateClosed:
 			session.mu.Lock()
 			session.sdpStatus = SDPFailed
@@ -586,7 +643,28 @@ func (h *Host) getOrCreateSession(id string, ttl time.Duration) (*ClientSession,
 
 func (h *Host) forwardRTPPackets(session *ClientSession) {
 	for packet := range session.rtpChan {
-		// Forward to WebRTC track
+		fmt.Printf("Forwarding packet - PT: %d, Seq: %d, TS: %d, SSRC: %d, Size: %d, Marker: %t\n",
+			packet.Header.PayloadType,
+			packet.Header.SequenceNumber,
+			packet.Header.Timestamp,
+			packet.Header.SSRC,
+			len(packet.Payload),
+			packet.Header.Marker)
+
+		// Validate H.264 payload
+		if len(packet.Payload) > 0 {
+			nalType := packet.Payload[0] & 0x1F
+			nalHeader := packet.Payload[0]
+			fmt.Printf("H.264 NAL - Type: %d, Header: 0x%02x, First 8 bytes: %x\n",
+				nalType, nalHeader, packet.Payload[:min(8, len(packet.Payload))])
+
+			// Check for valid NAL unit types
+			if nalType == 0 || nalType > 23 {
+				fmt.Printf("WARNING: Invalid NAL unit type %d\n", nalType)
+			}
+		} else {
+			fmt.Printf("WARNING: Empty payload\n")
+		}
 		if err := session.videoTrack.WriteRTP(packet); err != nil {
 			continue
 		}
@@ -603,15 +681,19 @@ func (h *Host) ProcessRTPPacket(sessionID string, rtpData *rtp.Packet) error {
 	h.mux.RUnlock()
 
 	if !exists {
-		return fmt.Errorf("session %h not found", sessionID)
+		fmt.Printf("Session %s not found\n", sessionID)
+		return fmt.Errorf("session %s not found", sessionID)
 	}
+
+	rtpData.Header.SSRC = uint32(session.primarySSRC)
 
 	select {
 	case session.rtpChan <- rtpData:
 		session.updateActivity()
 		return nil
 	default:
-		return fmt.Errorf("RTP channel full for session %h", sessionID)
+		fmt.Printf("RTP channel full for session %s\n", sessionID)
+		return fmt.Errorf("RTP channel full for session %s", sessionID)
 	}
 }
 
@@ -640,6 +722,145 @@ func (h *Host) WriteRTP(packet *rtp.Packet) error {
 		return fmt.Errorf("failed to send to all sessions: %v", errors)
 	}
 
+	return nil
+}
+
+func extractSSRCFromSDP(sdp string) (primarySSRC uint32, rtxSSRC uint32) {
+	lines := strings.Split(sdp, "\n")
+	ssrcs := make([]uint32, 0)
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "a=ssrc:") && !strings.Contains(line, "rtx") {
+			// Extract SSRC number
+			parts := strings.Split(line, " ")
+			if len(parts) >= 1 {
+				ssrcStr := strings.Split(parts[0], ":")[1]
+				if ssrc, err := strconv.ParseUint(ssrcStr, 10, 32); err == nil {
+					ssrcs = append(ssrcs, uint32(ssrc))
+				}
+			}
+		}
+	}
+
+	// Remove duplicates and sort
+	uniqueSSRCs := make(map[uint32]bool)
+	for _, ssrc := range ssrcs {
+		uniqueSSRCs[ssrc] = true
+	}
+
+	ssrcList := make([]uint32, 0, len(uniqueSSRCs))
+	for ssrc := range uniqueSSRCs {
+		ssrcList = append(ssrcList, ssrc)
+	}
+
+	if len(ssrcList) >= 1 {
+		primarySSRC = ssrcList[0] // 3420211287
+	}
+	if len(ssrcList) >= 2 {
+		rtxSSRC = ssrcList[1] // 230256171
+	}
+
+	return primarySSRC, rtxSSRC
+}
+
+func (h *Host) sendParameterSets(sessionID string) error {
+	h.mux.RLock()
+	session, exists := h.clients[sessionID]
+	h.mux.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session %s not found", sessionID)
+	}
+
+	// Create SPS packet
+	spsPacket := &rtp.Packet{
+		Header: rtp.Header{
+			Version:     2,
+			PayloadType: 102,
+			Timestamp:   uint32(time.Now().Unix() * 90000), // Use current timestamp
+			SSRC:        uint32(session.primarySSRC),       // Use the extracted SSRC
+			Marker:      false,                             // SPS should not have marker bit
+		},
+		Payload: spsData,
+	}
+
+	// Create PPS packet
+	ppsPacket := &rtp.Packet{
+		Header: rtp.Header{
+			Version:     2,
+			PayloadType: 102,
+			Timestamp:   uint32(time.Now().Unix() * 90000), // Same timestamp as SPS
+			SSRC:        uint32(session.primarySSRC),
+			Marker:      false, // PPS should not have marker bit
+		},
+		Payload: ppsData,
+	}
+
+	// Send SPS first
+	select {
+	case session.rtpChan <- spsPacket:
+		session.updateActivity()
+		session.mu.Lock()
+		session.mu.Unlock()
+	default:
+		return fmt.Errorf("failed to send SPS: channel full")
+	}
+
+	// Send PPS second
+	select {
+	case session.rtpChan <- ppsPacket:
+		session.updateActivity()
+		session.mu.Lock()
+		session.mu.Unlock()
+	default:
+		return fmt.Errorf("failed to send PPS: channel full")
+	}
+
+	return nil
+}
+
+func (h *Host) startParameterSetTimer(sessionID string) {
+	go func() {
+		ticker := time.NewTicker(3 * time.Second) // Send every 3 seconds
+		defer ticker.Stop()
+
+		fmt.Printf("⏰ Started periodic SPS/PPS timer for session %s\n", sessionID)
+
+		for {
+			select {
+			case <-h.ctx.Done():
+				fmt.Printf("⏰ Stopping SPS/PPS timer for session %s (context done)\n", sessionID)
+				return
+			case <-ticker.C:
+				h.mux.RLock()
+				session, exists := h.clients[sessionID]
+				h.mux.RUnlock()
+
+				if !exists {
+					fmt.Printf("⏰ Stopping SPS/PPS timer for session %s (session not found)\n", sessionID)
+					return
+				}
+
+				session.mu.RLock()
+				connected := session.connectionState == webrtc.PeerConnectionStateConnected
+				session.mu.RUnlock()
+
+				if connected {
+					fmt.Printf("⏰ Periodic SPS/PPS send for session %s\n", sessionID)
+					if err := h.sendParameterSets(sessionID); err != nil {
+						fmt.Printf("❌ Failed periodic SPS/PPS send: %v\n", err)
+					}
+				} else {
+					fmt.Printf("⏰ Stopping SPS/PPS timer for session %s (not connected)\n", sessionID)
+					return
+				}
+			}
+		}
+	}()
+}
+
+func (h *Host) Write(_ []byte) error {
 	return nil
 }
 

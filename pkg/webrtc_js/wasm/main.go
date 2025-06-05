@@ -1,1 +1,1 @@
-package wasm
+package main

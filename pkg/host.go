@@ -1,4 +1,4 @@
-package interfaces
+package mediasink
 
 import (
 	"context"
@@ -9,6 +9,11 @@ import (
 
 type Host interface {
 	Connect(context.Context)
-	Write(*rtp.Packet) error
+	WriteRTP(*rtp.Packet) error
+	Write([]byte) error
 	io.Closer
+}
+
+type CanCallBackPayload interface {
+	SetOnPayloadCallback(f func([]byte) error)
 }
