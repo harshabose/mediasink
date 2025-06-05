@@ -12,7 +12,7 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-type Option = func(*Host) error
+type HostOption = func(host *NewHost) error
 
 type PacketisationMode uint8
 
@@ -22,36 +22,58 @@ const (
 	PacketisationMode2 PacketisationMode = 2
 )
 
-func WithH264Options(packetisationMode PacketisationMode, sps, pps []byte) Option {
-	return func(host *Host) error {
-		host.description.Medias = append(host.description.Medias, &description.Media{
+func WithH264Options(packetisationMode PacketisationMode, sps, pps []byte) HostOption {
+	return func(host *NewHost) error {
+		media := &description.Media{
 			Type: description.MediaTypeVideo,
 			Formats: []format.Format{&format.H264{
-				PayloadTyp:        96,
+				PayloadTyp:        102, // NOTE: FOLLOWING PION'S CONVENTION
 				PacketizationMode: int(packetisationMode),
 				SPS:               sps,
 				PPS:               pps,
 			}},
-		})
+		}
+
+		host.AppendRTSPMediaDescription(media)
 
 		return nil
 	}
 }
 
-func WithOpusOptions(channelCount int) Option {
-	return func(host *Host) error {
-		host.description.Medias = append(host.description.Medias, &description.Media{
+func WithVP8Option() HostOption {
+	return func(host *NewHost) error {
+		media := &description.Media{
+			Type: description.MediaTypeVideo,
+			Formats: []format.Format{&format.VP8{
+				PayloadTyp: 96,
+				MaxFR:      nil,
+				MaxFS:      nil,
+			}},
+		}
+
+		host.AppendRTSPMediaDescription(media)
+
+		return nil
+	}
+}
+
+func WithOpusOptions(channelCount int) HostOption {
+	return func(host *NewHost) error {
+		media := &description.Media{
 			Type: description.MediaTypeAudio,
 			Formats: []format.Format{&format.Opus{
 				PayloadTyp:   111,
 				ChannelCount: channelCount,
 			}},
-		})
+		}
+
+		host.AppendRTSPMediaDescription(media)
+
 		return nil
 	}
 }
 
-func WithOptionsFromRemote(remote *webrtc.TrackRemote) Option {
+func WithOptionsFromRemote(remote *webrtc.TrackRemote) HostOption {
 	if remote.Codec().MimeType == webrtc.MimeTypeH264 {
 		return withH264OptionsFromRemote(remote)
 	}
@@ -61,13 +83,13 @@ func WithOptionsFromRemote(remote *webrtc.TrackRemote) Option {
 	if remote.Codec().MimeType == webrtc.MimeTypeOpus {
 		return withOpusOptionsFromRemote(remote)
 	}
-	return func(host *Host) error {
+	return func(host *NewHost) error {
 		return errors.New("unknown media codec")
 	}
 }
 
-func withH264OptionsFromRemote(remote *webrtc.TrackRemote) Option {
-	return func(host *Host) error {
+func withH264OptionsFromRemote(remote *webrtc.TrackRemote) HostOption {
+	return func(host *NewHost) error {
 		sps, pps, err := parseSPSPPS(remote.Codec().SDPFmtpLine)
 
 		if err != nil {
@@ -78,44 +100,31 @@ func withH264OptionsFromRemote(remote *webrtc.TrackRemote) Option {
 			return err
 		}
 
-		host.description.Medias = append(host.description.Medias, &description.Media{
-			Type: description.MediaTypeVideo,
-			Formats: []format.Format{&format.H264{
-				PayloadTyp:        uint8(remote.Codec().PayloadType),
-				PacketizationMode: packetisationMode,
-				SPS:               sps[4:],
-				PPS:               pps[4:],
-			}},
-		})
-		return nil
+		if remote.Codec().PayloadType != 102 {
+			return fmt.Errorf("expected payload type to be 102; but got %d", remote.Codec().PayloadType)
+		}
+
+		return WithH264Options(PacketisationMode(packetisationMode), sps, pps)(host)
 	}
 }
 
-func withVP8OptionsFromRemote(remote *webrtc.TrackRemote) Option {
-	return func(host *Host) error {
-		host.description.Medias = append(host.description.Medias, &description.Media{
-			Type: description.MediaTypeVideo,
-			Formats: []format.Format{&format.VP8{
-				PayloadTyp: uint8(remote.Codec().PayloadType),
-				MaxFR:      nil,
-				MaxFS:      nil,
-			}},
-		})
-		return nil
+func withVP8OptionsFromRemote(remote *webrtc.TrackRemote) HostOption {
+	return func(host *NewHost) error {
+		if remote.Codec().PayloadType != 96 { // NOTE: FOLLOWING PION'S CONVENTION
+			return fmt.Errorf("expected payload type to be 96; but got %d", remote.Codec().PayloadType)
+		}
+
+		return WithVP8Option()(host)
 	}
 }
 
-func withOpusOptionsFromRemote(remote *webrtc.TrackRemote) Option {
-	return func(host *Host) error {
-		host.description.Medias = append(host.description.Medias, &description.Media{
-			Type: description.MediaTypeAudio,
-			Formats: []format.Format{&format.Opus{
-				PayloadTyp:   uint8(remote.Codec().PayloadType),
-				ChannelCount: int(remote.Codec().RTPCodecCapability.Channels),
-			}},
-		})
+func withOpusOptionsFromRemote(remote *webrtc.TrackRemote) HostOption {
+	return func(host *NewHost) error {
+		if remote.Codec().PayloadType != 111 { // NOTE: FOLLOWING PION'S CONVENTION
+			return fmt.Errorf("expected payload type to be 111; but got %d", remote.Codec().PayloadType)
+		}
 
-		return nil
+		return WithOpusOptions(int(remote.Codec().Channels))(host)
 	}
 }
 

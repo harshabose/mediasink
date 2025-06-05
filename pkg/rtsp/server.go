@@ -1,6 +1,7 @@
 package rtsp
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -16,6 +17,10 @@ type Server struct {
 	mutex     sync.Mutex
 	stream    *gortsplib.ServerStream
 	publisher *gortsplib.ServerSession
+
+	once   sync.Once
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 func CreateServer(port int) *Server {
@@ -39,10 +44,6 @@ func (server *Server) Start() error {
 		return err
 	}
 	return nil
-}
-
-func (server *Server) GetServer() *gortsplib.Server {
-	return server.server
 }
 
 func (server *Server) OnConnOpen(ctx *gortsplib.ServerHandlerOnConnOpenCtx) {
@@ -141,6 +142,9 @@ func (server *Server) OnRecord(ctx *gortsplib.ServerHandlerOnRecordCtx) (*base.R
 	}, nil
 }
 
-func (server *Server) Close() {
+func (server *Server) Close() error {
+	server.cancel()
 	server.server.Close()
+
+	return nil
 }

@@ -10,11 +10,10 @@ import (
 	"github.com/harshabose/tools/buffer/pkg"
 
 	"github.com/harshabose/simple_webrtc_comm/mediasink/internal"
-	"github.com/harshabose/simple_webrtc_comm/mediasink/pkg/rtsp"
 )
 
 type Stream struct {
-	host   *rtsp.Host
+	host   Host
 	buffer buffer.BufferWithGenerator[rtp.Packet]
 	ctx    context.Context
 }
@@ -39,6 +38,7 @@ func (stream *Stream) WriteRTPPacket(packet *rtp.Packet) error {
 }
 
 func (stream *Stream) Start() {
+	go stream.host.Connect(stream.ctx)
 	go stream.loop()
 	fmt.Println("media sink stream started")
 }
@@ -50,14 +50,29 @@ func (stream *Stream) loop() {
 		select {
 		case <-stream.ctx.Done():
 			return
-		case packet := <-stream.buffer.GetChannel():
-			if err := stream.host.Write(packet); err != nil {
-				fmt.Println(err)
+		default:
+			packet, err := stream.getPacket()
+			if err != nil {
+				continue
+			}
+
+			if err := stream.host.WriteRTP(packet); err != nil {
 				continue
 			}
 			stream.buffer.PutBack(packet)
 		}
 	}
+}
+
+func (stream *Stream) GetHost() Host {
+	return stream.host
+}
+
+func (stream *Stream) getPacket() (*rtp.Packet, error) {
+	ctx, cancel := context.WithTimeout(stream.ctx, 50*time.Millisecond)
+	defer cancel()
+
+	return stream.buffer.Pop(ctx)
 }
 
 func (stream *Stream) close() {

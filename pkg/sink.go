@@ -3,6 +3,7 @@ package mediasink
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/pion/webrtc/v4"
 )
@@ -20,8 +21,21 @@ func CreateSink(ctx context.Context, stream *Stream) *Sink {
 	}
 }
 
+func (sink *Sink) GetStream() *Stream {
+	return sink.stream
+}
+
 func (sink *Sink) SetTrack(track *webrtc.TrackRemote) {
 	sink.track = track
+}
+
+func (sink *Sink) SetOnPayloadCallback(f func([]byte) error) {
+	s, ok := sink.stream.host.(CanCallBackPayload)
+	if !ok {
+		return
+	}
+
+	s.SetOnPayloadCallback(f)
 }
 
 func (sink *Sink) Start() {
@@ -38,8 +52,12 @@ loop:
 		case <-sink.ctx.Done():
 			return
 		default:
+			if sink.track == nil {
+				time.Sleep(10 * time.Millisecond)
+			}
 			packet, _, err := sink.track.ReadRTP()
 			if err != nil {
+				time.Sleep(10 * time.Millisecond)
 				continue loop
 			}
 
